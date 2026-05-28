@@ -20,7 +20,9 @@ def load_rag():
 
 # ── Generate answer via HF Inference API ───────────────────────────────────────
 def generate_answer(query: str, context_chunks: list[str], hf_token: str) -> str:
-    context = "\n\n---\n\n".join(context_chunks)
+    # Truncate each chunk to 200 words to stay within token limits
+    trimmed = [" ".join(c.split()[:200]) for c in context_chunks[:3]]
+    context = "\n\n---\n\n".join(trimmed)
     client = InferenceClient(token=hf_token)
     messages = [
         {
@@ -38,8 +40,8 @@ def generate_answer(query: str, context_chunks: list[str], hf_token: str) -> str
     ]
     response = client.chat_completion(
         messages=messages,
-        model="mistralai/Mistral-7B-Instruct-v0.3",
-        max_tokens=512,
+        model="HuggingFaceH4/zephyr-7b-beta",
+        max_tokens=400,
         temperature=0.2,
     )
     return response.choices[0].message.content.strip()
