@@ -21,22 +21,28 @@ def load_rag():
 # ── Generate answer via HF Inference API ───────────────────────────────────────
 def generate_answer(query: str, context_chunks: list[str], hf_token: str) -> str:
     context = "\n\n---\n\n".join(context_chunks)
-    prompt = (
-        "<s>[INST] You are an expert on the EU Artificial Intelligence Act. "
-        "Answer the user's question using ONLY the context passages provided below. "
-        "Be accurate, concise, and cite article numbers when they appear in the context.\n\n"
-        f"Context:\n{context}\n\n"
-        f"Question: {query} [/INST]"
-    )
     client = InferenceClient(token=hf_token)
-    response = client.text_generation(
-        prompt,
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an expert on the EU Artificial Intelligence Act. "
+                "Answer questions using ONLY the context passages provided. "
+                "Be accurate and concise. Cite article numbers when they appear in the context."
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"Context:\n{context}\n\nQuestion: {query}",
+        },
+    ]
+    response = client.chat_completion(
+        messages=messages,
         model="mistralai/Mistral-7B-Instruct-v0.3",
-        max_new_tokens=512,
+        max_tokens=512,
         temperature=0.2,
-        repetition_penalty=1.1,
     )
-    return response.strip()
+    return response.choices[0].message.content.strip()
 
 
 # ── UI ────────────────────────────────────────────────────────────────────────
