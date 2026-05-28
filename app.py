@@ -1,6 +1,6 @@
 import os
 import streamlit as st
-from huggingface_hub import InferenceClient
+import google.generativeai as genai
 from rag import load_and_chunk_pdf, build_index, search
 
 # ── Page config ────────────────────────────────────────────────────────────────
@@ -18,33 +18,21 @@ def load_rag():
     return index, model, chunks
 
 
-# ── Generate answer via HF Inference API ───────────────────────────────────────
-def generate_answer(query: str, context_chunks: list[str], hf_token: str) -> str:
-    # Truncate each chunk to 200 words to stay within token limits
-    trimmed = [" ".join(c.split()[:200]) for c in context_chunks[:3]]
+# ── Generate answer via Gemini API ─────────────────────────────────────────────
+def generate_answer(query: str, context_chunks: list[str], gemini_key: str) -> str:
+    trimmed = [" ".join(c.split()[:250]) for c in context_chunks[:4]]
     context = "\n\n---\n\n".join(trimmed)
-    client = InferenceClient(token=hf_token)
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are an expert on the EU Artificial Intelligence Act. "
-                "Answer questions using ONLY the context passages provided. "
-                "Be accurate and concise. Cite article numbers when they appear in the context."
-            ),
-        },
-        {
-            "role": "user",
-            "content": f"Context:\n{context}\n\nQuestion: {query}",
-        },
-    ]
-    response = client.chat_completion(
-        messages=messages,
-        model="HuggingFaceH4/zephyr-7b-beta",
-        max_tokens=400,
-        temperature=0.2,
+    genai.configure(api_key=gemini_key)
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    prompt = (
+        "You are an expert on the EU Artificial Intelligence Act. "
+        "Answer the question using ONLY the context passages provided below. "
+        "Be accurate and concise. Cite article numbers when they appear.\n\n"
+        f"Context:\n{context}\n\n"
+        f"Question: {query}"
     )
-    return response.choices[0].message.content.strip()
+    response = model.generate_content(prompt)
+    return response.text.strip()
 
 
 # ── UI ────────────────────────────────────────────────────────────────────────
@@ -59,12 +47,12 @@ with st.spinner("📚 Loading EU AI Act knowledge base — this takes ~30 s on f
     index, embed_model, chunks = load_rag()
 st.success(f"✅ Ready — {len(chunks):,} passages indexed from the EU AI Act")
 
-# HF token (from Streamlit secrets or env)
-hf_token = st.secrets.get("HF_TOKEN", os.environ.get("HF_TOKEN", ""))
-if not hf_token:
+# Gemini API key (from Streamlit secrets or env)
+gemini_key = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+if not gemini_key:
     st.warning(
-        "⚠️ No HuggingFace token found. "
-        "Set **HF_TOKEN** in Streamlit Cloud secrets to enable answer generation."
+        "⚠️ No Gemini API key found. "
+        "Set **GEMINI_API_KEY** in Streamlit Cloud secrets to enable answer generation."
     )
 
 # Example questions in sidebar
@@ -107,14 +95,14 @@ if user_query := st.chat_input("Ask about the EU AI Act…"):
         st.markdown(user_query)
 
     with st.chat_message("assistant"):
-        if not hf_token:
-            answer = "⚠️ Please add your HuggingFace token to Streamlit secrets (key: `HF_TOKEN`) to enable answer generation."
+        if not gemini_key:
+            answer = "⚠️ Please add your Gemini API key to Streamlit secrets (key: `GEMINI_API_KEY`) to enable answer generation."
             st.markdown(answer)
             st.session_state.messages.append({"role": "assistant", "content": answer})
         else:
             with st.spinner("🔍 Searching regulation text and generating answer…"):
                 relevant = search(user_query, index, embed_model, chunks, top_k=5)
-                answer = generate_answer(user_query, relevant, hf_token)
+                answer = generate_answer(user_query, relevant, gemini_key)
 
             st.markdown(answer)
             with st.expander("📄 Source passages"):
